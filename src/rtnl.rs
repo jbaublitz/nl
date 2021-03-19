@@ -42,12 +42,12 @@ where
         while pos < mem.len() {
             let packet_len = packet_length_u16(mem, pos);
             let (nlhdr, pos_tmp) = drive_deserialize!(
-                Rtattr<T, P>, mem, pos, alignto(packet_len)
+                Rtattr<T, P>, mem, pos, alignto(packet_len), RtBuffer, Rtattr
             );
             rtattrs.push(nlhdr);
             pos = pos_tmp;
         }
-        drive_deserialize!(END mem, pos);
+        drive_deserialize!(END mem, pos, RtBuffer);
         Ok(rtattrs)
     }
 
@@ -171,7 +171,7 @@ impl Nl for Ifinfomsg {
                     + ifi_flags.size()
                     + ifi_change.size()
                 )
-                .ok_or(DeError::UnexpectedEOB)?
+                .ok_or(DeError::IncompleteType(stringify!(Ifinfomsg), Some(stringify!(rtattrs))))?
             }
         })
     }
@@ -227,19 +227,24 @@ impl Nl for Ifaddrmsg {
     fn deserialize(mem: DeBuffer) -> Result<Self, DeError> {
         // Manual serialization to handle ifa_flags field
         let pos = 0;
-        let (ifa_family, pos) = drive_deserialize!(RtAddrFamily, mem, pos);
-        let (ifa_prefixlen, pos) = drive_deserialize!(libc::c_uchar, mem, pos);
-        let (flags, pos) = drive_deserialize!(libc::c_uchar, mem, pos);
-        let (ifa_scope, pos) = drive_deserialize!(libc::c_uchar, mem, pos);
-        let (ifa_index, pos) = drive_deserialize!(libc::c_int, mem, pos);
+        let (ifa_family, pos) = drive_deserialize!(RtAddrFamily, mem, pos, Ifaddrmsg, ifa_family);
+        let (ifa_prefixlen, pos) =
+            drive_deserialize!(libc::c_uchar, mem, pos, Ifaddrmsg, ifa_prefixlen);
+        let (flags, pos) = drive_deserialize!(libc::c_uchar, mem, pos, Ifaddrmsg, ifa_flags);
+        let (ifa_scope, pos) = drive_deserialize!(libc::c_uchar, mem, pos, Ifaddrmsg, ifa_scope);
+        let (ifa_index, pos) = drive_deserialize!(libc::c_int, mem, pos, Ifaddrmsg, ifa_index);
         let rtattrs_size = mem
             .len()
             .checked_sub(
                 ifa_family.size() + ifa_prefixlen.size() + 1 + ifa_scope.size() + ifa_index.size(),
             )
-            .ok_or(DeError::UnexpectedEOB)?;
-        let (rtattrs, pos) = drive_deserialize!(RtBuffer<Ifa, Buffer>, mem, pos, rtattrs_size);
-        drive_deserialize!(END mem, pos);
+            .ok_or(DeError::IncompleteType(
+                stringify!(Ifaddrmsg),
+                Some(stringify!(rtattrs)),
+            ))?;
+        let (rtattrs, pos) =
+            drive_deserialize!(RtBuffer<Ifa, Buffer>, mem, pos, rtattrs_size, Ifaddrmsg, rtattrs);
+        drive_deserialize!(END mem, pos, Ifaddrmsg);
         Ok(Ifaddrmsg {
             ifa_family,
             ifa_prefixlen,
@@ -359,7 +364,7 @@ impl Nl for Rtmsg {
                     + rtm_type.size()
                     + rtm_flags.size()
                 )
-                .ok_or(DeError::UnexpectedEOB)?
+                .ok_or(DeError::IncompleteType(stringify!(Rtmsg), Some(stringify!(rtattrs))))?
             }
         })
     }
@@ -460,7 +465,7 @@ impl Nl for Ndmsg {
                     + ndm_flags.size()
                     + ndm_type.size()
                 )
-                .ok_or(DeError::UnexpectedEOB)?
+                .ok_or(DeError::IncompleteType(stringify!(Ndmsg), Some(stringify!(rtattrs))))?
             }
         })
     }
@@ -583,7 +588,7 @@ impl Nl for Tcmsg {
                     + tcm_parent.size()
                     + tcm_info.size()
                 )
-                .ok_or(DeError::UnexpectedEOB)?
+                .ok_or(DeError::IncompleteType(stringify!(Tcmsg), Some(stringify!(rtattrs))))?
             }
 
         })
@@ -722,7 +727,7 @@ where
                 rta_payload: P => (rta_len as usize).checked_sub(
                     rta_len.size() + rta_type.size()
                 )
-                .ok_or(DeError::UnexpectedEOB)?
+                .ok_or(DeError::IncompleteType(stringify!(Rtattr), Some(stringify!(rta_payload))))?
             } => alignto(rta_len as usize) - rta_len as usize
         })
     }
